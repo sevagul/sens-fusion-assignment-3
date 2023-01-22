@@ -18,7 +18,7 @@ using namespace std::chrono_literals;
 
 namespace my_vis
 {
-    void vis_point_cloud(const EigenPCL &pclToVis)
+    inline void vis_point_cloud(const EigenPCL &pclToVis)
     {
         // using PointType = pcl::PointXYZ;
         // using PclType = pcl::PointCloud<PointType>;
@@ -37,7 +37,7 @@ namespace my_vis
         }
     }
 
-    void vis_point_clouds(const EigenPCL &pcl1, const EigenPCL &pcl2)
+    inline void vis_point_clouds(const EigenPCL &pcl1, const EigenPCL &pcl2)
     {
         PclType pcl1_vis;
         my_conv::EigenToPcl(pcl1, pcl1_vis, 0, 255);

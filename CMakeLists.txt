@@ -14,7 +14,7 @@ find_package (OpenCV REQUIRED )
 FIND_PACKAGE(Boost COMPONENTS program_options filesystem REQUIRED)
 INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIRS})
 
-add_executable(HelloWorld src/main.cpp)
+add_executable(HelloWorld src/main.cpp src/my_icp.cpp)
 target_include_directories(HelloWorld PRIVATE ${EIGEN3_INCLUDE_DIR})
 target_link_libraries(HelloWorld  ${OpenCV_LIBS} ${Boost_LIBRARIES} ${PCL_LIBRARIES}) #nanoflann::nanoflann
 

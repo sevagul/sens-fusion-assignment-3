@@ -13,7 +13,7 @@
 
 namespace my_conv{
     template <typename Der>
-    void EigenToPcl(const EigenPCLMat<Der> &pclIn, PclType &pclOut, int c1, int c2)
+    inline void EigenToPcl(const EigenPCLMat<Der> &pclIn, PclType &pclOut, int c1, int c2)
     {
         for (size_t i = 0; i < pclIn.rows(); i++)
         {
