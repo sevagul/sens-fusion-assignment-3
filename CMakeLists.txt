@@ -4,6 +4,7 @@ project( Hello_Nanoflann )
 #find_package(nanoflann)
 find_package(PCL REQUIRED COMPONENTS visualization)
 include_directories(${PCL_INCLUDE_DIRS})
+include_directories(include)
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
