@@ -125,9 +125,10 @@ void Disparity2PointCloud(
   int rows = disparities.rows;
   int cols = disparities.cols;
   std::vector<std::vector<double>> points_vec;
+  #pragma omp paraller for
   for (int r = 0; r < rows; ++r)
   {
-    std::cout << "Reconstructing 3D point cloud from disparities... " << std::ceil(((r) / static_cast<double>(rows + 1)) * 100) << "%\r" << std::flush;
+    // std::cout << "Reconstructing 3D point cloud from disparities... " << std::ceil(((r) / static_cast<double>(rows + 1)) * 100) << "%\r" << std::flush;
     // #pragma omp parallel for
     for (int c = 0; c < cols; ++c)
     {
@@ -196,9 +197,10 @@ int main(int argc, char **argv)
 
   std::vector<double> distances(querySet.size()); 
   std::vector<int32_t> inds(querySet.size());
-
+  int rows = querySet.rows();
+  
   #pragma omp parallel for
-  for (int i = 0; i < querySet.rows(); i++)
+  for (long long int i = 0; i < rows; i++)
   {
     int query_index = i;
     Eigen::Vector3d pt_query = querySet.row(query_index);
