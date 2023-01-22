@@ -10,6 +10,7 @@
 
 #include <boost/filesystem.hpp>
 #include <Eigen/Dense>
+#include <Eigen/Core>
 
 #include <omp.h>
 
@@ -58,21 +59,19 @@ int findClosestIndex(Vector3<Der> &query_pt, const MyKdTree<EigenPCLMat<Der>> &m
   return int(closest_index);
 }
 
-template <typename Der>
-Matrix4<Der> best_fit_transform(const EigenPCLMat<Der> &A, const EigenPCLMat<Der> &B)
+// template <typename Der>
+Matrix4<double> best_fit_transform(const EigenPCLMat<double> &A, const EigenPCLMat<double> &B)
 {
   /*
   Notice:
   1/ JacobiSVD return U,S,V, S as a vector, "use U*S*Vt" to get original Matrix;
   2/ matrix type 'MatrixXd' or 'MatrixXf' matters.
   */
-  Matrix4<Der> T = MatrixX<Der>::Identity(4, 4);
-  Vector3<Der> centroid_A(0, 0, 0);
-  Vector3<Der> centroid_B(0, 0, 0);
-  MatrixX<Der> AA;
-  AA = A;
-  MatrixX<Der> BB;
-  BB = B;
+  Matrix4<double> T = MatrixX<double>::Identity(4, 4);
+  Vector3<double> centroid_A(0, 0, 0);
+  Vector3<double> centroid_B(0, 0, 0);
+  MatrixX<double> AA = A;
+  MatrixX<double> BB = B;
   int row = A.rows();
 
   for (int i = 0; i < row; i++)
@@ -88,15 +87,15 @@ Matrix4<Der> best_fit_transform(const EigenPCLMat<Der> &A, const EigenPCLMat<Der
     BB.block<1, 3>(i, 0) = B.block<1, 3>(i, 0) - centroid_B.transpose();
   }
 
-  MatrixX<Der> H = AA.transpose() * BB;
-  MatrixX<Der> U;
+  MatrixX<double> H = AA.transpose() * BB;
+  MatrixX<double> U;
   Eigen::VectorXd S;
-  MatrixX<Der> V;
-  MatrixX<Der> Vt;
-  Matrix3<Der> R;
-  Vector3<Der> t;
+  MatrixX<double> V;
+  MatrixX<double> Vt;
+  Matrix3<double> R;
+  Vector3<double> t;
 
-  JacobiSVD<MatrixX<Der>> svd(H, ComputeFullU | ComputeFullV);
+  JacobiSVD<MatrixX<double>> svd(H, ComputeFullU | ComputeFullV);
   U = svd.matrixU();
   S = svd.singularValues();
   V = svd.matrixV();
@@ -116,6 +115,83 @@ Matrix4<Der> best_fit_transform(const EigenPCLMat<Der> &A, const EigenPCLMat<Der
   (T.block<3, 1>(0, 3)) = t;
   return T;
 }
+
+Matrix4<double> ICPiter(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2, MyKdTree<EigenPCL>& my_tree){
+  auto querySet = PCL2;
+  EigenPCL PCL3(PCL2);
+  
+
+  std::vector<double> distances(querySet.size()); 
+  std::vector<int32_t> inds(querySet.size());
+  int rows = querySet.rows();
+  
+  #pragma omp parallel for
+  for (long long int i = 0; i < rows; i++)
+  {
+    int query_index = i;
+    Eigen::Vector3d pt_query = querySet.row(query_index);
+    double cur_closest_distance;
+    int closestIndex = findClosestIndex(pt_query, my_tree, cur_closest_distance);
+    distances[i] = cur_closest_distance;
+    inds[i] = closestIndex;
+    PCL3.row(i) = PCL1.row(closestIndex);
+  }
+
+  double avg_distance = 0;
+  double cur_closest_distance;
+  for (size_t i = 0; i < distances.size(); i++)
+  {
+    cur_closest_distance = distances[i];
+    avg_distance = avg_distance * i / (i + 1) + cur_closest_distance / (i + 1);
+  }
+
+  std::cout << "Avg closest distance: " << avg_distance << std::endl;
+
+  Matrix4<double> T;
+  T = best_fit_transform(PCL2, PCL3);
+  return T;
+}
+
+
+
+void applyTransformation(EigenPCLMat<double> &PCL, const Eigen::Matrix4d T){
+  const int rows = int(PCL.rows());
+  Eigen::Matrix<double, Eigen::Dynamic, -1 > ones(rows, 1);
+  ones.setConstant(1);
+  Eigen::Matrix<double, Eigen::Dynamic, -1> PCL_hom(rows, 4);
+  std::cout << "Initing matrix" << std::endl;
+  PCL_hom << PCL, ones;
+  PCL_hom = PCL_hom*(T);
+  std::cout << PCL_hom.size() << std::endl;
+  PCL << PCL_hom.leftCols<3>().eval();
+}
+
+Matrix4<double> ICP(const EigenPCLMat<double> &PCL1, EigenPCLMat<double> &PCL2_in){
+  MyKdTree<EigenPCL> my_tree(EigenPCL::ColsAtCompileTime, std::cref(PCL1));
+  my_tree.index->buildIndex();
+  Matrix4<double> T_res = Matrix4<double>::Identity(4, 4);
+  Matrix4<double> T = Matrix4<double>::Identity(4, 4);
+  EigenPCLMat<double> PCL2(PCL2_in);
+  for (size_t i = 0; i < 4; i++)
+  {
+    T = ICPiter(PCL1, PCL2, my_tree);
+    T_res = T_res*T;
+    const int rows = int(PCL2.rows());
+    Eigen::Matrix<double, Eigen::Dynamic, -1 > ones(rows, 1);
+    ones.setConstant(1);
+    Eigen::Matrix<double, Eigen::Dynamic, -1> PCL2_hom(rows, 4);
+    std::cout << "Initing matrix" << std::endl;
+    PCL2_hom << PCL2, ones;
+    PCL2_hom = PCL2_hom*(T);
+    std::cout << PCL2_hom.size() << std::endl;
+    PCL2 << PCL2_hom.leftCols<3>().eval();
+  }
+
+  return T_res;
+}
+
+
+
 
 // template <typename Der>
 void Disparity2PointCloud(
@@ -162,9 +238,12 @@ void Disparity2PointCloud(
   }
 }
 
+
+
+
 int main(int argc, char **argv)
 {
-  bool visualize = false;
+  bool visualize = true;
   cv::Mat D1;
   cv::Mat D2;
   std::string datasetName = "Art";
@@ -183,7 +262,6 @@ int main(int argc, char **argv)
   Disparity2PointCloud(PCL1, D1, 200, 160, 3740);
   Disparity2PointCloud(PCL2, D2, 200, 160, 3740);
 
-  EigenPCL PCL3(PCL2);
 
   // visdclouulaize pointcloud
   if (visualize)
@@ -191,40 +269,62 @@ int main(int argc, char **argv)
     my_vis::vis_point_clouds(PCL1, PCL2);
   }
 
-  auto querySet = PCL2;
-  MyKdTree<EigenPCL> my_tree(EigenPCL::ColsAtCompileTime, std::cref(PCL1));
-  my_tree.index->buildIndex();
+  EigenPCL PCL3(PCL2);
 
-  std::vector<double> distances(querySet.size()); 
-  std::vector<int32_t> inds(querySet.size());
-  int rows = querySet.rows();
+  // auto querySet = PCL2;
+  // MyKdTree<EigenPCL> my_tree(EigenPCL::ColsAtCompileTime, std::cref(PCL1));
+  // my_tree.index->buildIndex();
+
+  // std::vector<double> distances(querySet.size()); 
+  // std::vector<int32_t> inds(querySet.size());
+  // int rows = querySet.rows();
   
-  #pragma omp parallel for
-  for (long long int i = 0; i < rows; i++)
-  {
-    int query_index = i;
-    Eigen::Vector3d pt_query = querySet.row(query_index);
-    double cur_closest_distance;
-    int closestIndex = findClosestIndex(pt_query, my_tree, cur_closest_distance);
-    distances[i] = cur_closest_distance;
-    inds[i] = closestIndex;
-    PCL3.row(i) = PCL1.row(closestIndex);
-  }
+  // #pragma omp parallel for
+  // for (long long int i = 0; i < rows; i++)
+  // {
+  //   int query_index = i;
+  //   Eigen::Vector3d pt_query = querySet.row(query_index);
+  //   double cur_closest_distance;
+  //   int closestIndex = findClosestIndex(pt_query, my_tree, cur_closest_distance);
+  //   distances[i] = cur_closest_distance;
+  //   inds[i] = closestIndex;
+  //   PCL3.row(i) = PCL1.row(closestIndex);
+  // }
 
-  double avg_distance = 0;
-  double cur_closest_distance;
-  for (size_t i = 0; i < distances.size(); i++)
-  {
-    cur_closest_distance = distances[i];
-    avg_distance = avg_distance * i / (i + 1) + cur_closest_distance / (i + 1);
-  }
+  // double avg_distance = 0;
+  // double cur_closest_distance;
+  // for (size_t i = 0; i < distances.size(); i++)
+  // {
+  //   cur_closest_distance = distances[i];
+  //   avg_distance = avg_distance * i / (i + 1) + cur_closest_distance / (i + 1);
+  // }
 
-  std::cout << "Avg closest distance: " << avg_distance << std::endl;
+  // std::cout << "Avg closest distance: " << avg_distance << std::endl;
 
-  // Matrix4<double> T;
-  // T = best_fit_transform(PCL2, PCL3);
-  // std::cout << "Best Transform: " << std::endl;
-  // std::cout << T << std::endl;
+  Matrix4<double> T;
+  T = ICP(PCL1, PCL2);
+  // T = ICPiter(PCL1, PCL2, my_tree);
+
+  // const int rows = int(PCL2.rows());
+
+  // Eigen::Matrix<double, Eigen::Dynamic, 1 > ones(rows, 1);
+  // // ones.resize(cols, Eigen::NoChange);
+  // ones.setConstant(1);
+  // Eigen::Matrix<double, Eigen::Dynamic, 4> PCL2_hom(rows, 4);
+  // // PCL2_hom.resize(cols, Eigen::NoChange);
+  // std::cout << "Initing matrix" << std::endl;
+  // PCL2_hom << PCL2, ones;
+  
+  // std::cout << "Inited" << std::endl;
+  // PCL2_hom = PCL2_hom*T.inverse();
+  // // std::cout << PCL2_hom.size() << std::endl;
+  // PCL2 << PCL2_hom.leftCols<3>().eval();
+  // // std::cout << "Best Transform: " << std::endl;
+  std::cout << T << std::endl;
+  EigenPCL result(PCL2);
+  applyTransformation(result, T);
+
+  my_vis::vis_point_clouds(PCL1, result);
 
 
   return 0;
