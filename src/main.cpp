@@ -11,6 +11,7 @@
 #include <boost/filesystem.hpp>
 #include <Eigen/Dense>
 
+#include <omp.h>
 
 namespace fs = boost::filesystem;
 
@@ -26,7 +27,6 @@ const int SAMPLES_DIM = 15;
 // {
 //   using PC_type = Eigen::Matrix<Der, Eigen::Dynamic, 3>;
 //   using my_kd_tree_t = KDTreeEigenMatrixAdaptor<PC_type, 3, nanoflann::metric_L2>;
-
 
 //   my_kd_tree_t my_tree(PC_type::ColsAtCompileTime, std::cref(pc));
 //   my_tree.index->buildIndex();
@@ -45,22 +45,18 @@ const int SAMPLES_DIM = 15;
 // }
 
 template <typename Der>
-int findClosestIndex(Vector3<Der> &query_pt, const MyKdTree<EigenPCLMat<Der>> &my_tree)
+int findClosestIndex(Vector3<Der> &query_pt, const MyKdTree<EigenPCLMat<Der>> &my_tree, Der &closest_sqdist)
 {
-
   size_t closest_index;
-  Der closest_sqdist;
 
   nanoflann::KNNResultSet<Der> result(1);
   result.init(&closest_index, &closest_sqdist);
 
   my_tree.index->findNeighbors(result, &query_pt.x(),
                                nanoflann::SearchParams());
-  std::cout << "closest sq_dist: " << closest_sqdist << std::endl;
+
   return int(closest_index);
 }
-
-
 
 template <typename Der>
 Matrix4<Der> best_fit_transform(const EigenPCLMat<Der> &A, const EigenPCLMat<Der> &B)
@@ -73,8 +69,10 @@ Matrix4<Der> best_fit_transform(const EigenPCLMat<Der> &A, const EigenPCLMat<Der
   Matrix4<Der> T = MatrixX<Der>::Identity(4, 4);
   Vector3<Der> centroid_A(0, 0, 0);
   Vector3<Der> centroid_B(0, 0, 0);
-  MatrixX<Der> AA = A;
-  MatrixX<Der> BB = B;
+  MatrixX<Der> AA;
+  AA = A;
+  MatrixX<Der> BB;
+  BB = B;
   int row = A.rows();
 
   for (int i = 0; i < row; i++)
@@ -184,6 +182,8 @@ int main(int argc, char **argv)
   Disparity2PointCloud(PCL1, D1, 200, 160, 3740);
   Disparity2PointCloud(PCL2, D2, 200, 160, 3740);
 
+  EigenPCL PCL3(PCL2);
+
   // visdclouulaize pointcloud
   if (visualize)
   {
@@ -194,17 +194,36 @@ int main(int argc, char **argv)
   MyKdTree<EigenPCL> my_tree(EigenPCL::ColsAtCompileTime, std::cref(PCL1));
   my_tree.index->buildIndex();
 
+  std::vector<double> distances(querySet.size()); 
+  std::vector<int32_t> inds(querySet.size());
 
-  for (size_t i = 0; i < 100; i++)
+  #pragma omp parallel for
+  for (int i = 0; i < querySet.rows(); i++)
   {
-    size_t query_index = 3;
-    Eigen::Vector3d pt_query = PCL1.row(query_index);
-    int closestIndex = findClosestIndex(pt_query, my_tree);
-    std::cout << "closest_index: " << closestIndex << std::endl;
-    std::cout << "point: " << pt_query << std::endl;
-    std::cout << "closest point: " << querySet.row(closestIndex) << std::endl;
+    int query_index = i;
+    Eigen::Vector3d pt_query = querySet.row(query_index);
+    double cur_closest_distance;
+    int closestIndex = findClosestIndex(pt_query, my_tree, cur_closest_distance);
+    distances[i] = cur_closest_distance;
+    inds[i] = closestIndex;
+    PCL3.row(i) = PCL1.row(closestIndex);
   }
-  
+
+  double avg_distance = 0;
+  double cur_closest_distance;
+  for (size_t i = 0; i < distances.size(); i++)
+  {
+    cur_closest_distance = distances[i];
+    avg_distance = avg_distance * i / (i + 1) + cur_closest_distance / (i + 1);
+  }
+
+  std::cout << "Avg closest distance: " << avg_distance << std::endl;
+
+  // Matrix4<double> T;
+  // T = best_fit_transform(PCL2, PCL3);
+  // std::cout << "Best Transform: " << std::endl;
+  // std::cout << T << std::endl;
+
 
   return 0;
 }
