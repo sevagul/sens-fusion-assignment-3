@@ -13,7 +13,7 @@
 
 #include <omp.h>
 #include <my_icp.h>
-#include <limits> 
+#include <limits>
 
 namespace fs = boost::filesystem;
 
@@ -94,7 +94,7 @@ namespace my_icp
         return T;
     }
 
-    Matrix4<double> ICPiter(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2, MyKdTree<EigenPCL> &my_tree, double& avg_distance)
+    Matrix4<double> ICPiter(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2, MyKdTree<EigenPCL> &my_tree, double &avg_distance)
     {
         auto querySet = PCL2;
         EigenPCL PCL3(PCL2);
@@ -152,11 +152,12 @@ namespace my_icp
         double avg_distance = std::numeric_limits<double>::max();
         double decrease_th = 0.05;
         size_t i;
-        for ( i = 0; i < max_iter; i++)
+        for (i = 0; i < max_iter; i++)
         {
             double prev_dist = avg_distance;
             T = ICPiter(PCL1, PCL2, my_tree, avg_distance);
-            if (avg_distance > prev_dist){
+            if (avg_distance > prev_dist)
+            {
                 std::cout << "Distance increased!" << std::endl;
                 return T;
             }
@@ -168,15 +169,133 @@ namespace my_icp
             PCL2_hom << PCL2, ones;
             PCL2_hom = PCL2_hom * (T);
             PCL2 << PCL2_hom.leftCols<3>().eval();
-            if (prev_dist/avg_distance < 1+decrease_th){
+            if (prev_dist / avg_distance < 1 + decrease_th)
+            {
                 std::cout << "Converged!" << std::endl;
                 break;
             }
         }
-        if (i == max_iter){
+        if (i == max_iter)
+        {
             std::cout << "Not Converged! Reached maximum iterations" << std::endl;
         }
 
         return T_res;
     }
+
+    std::vector<int> findBestIndices(std::vector<double> &dists, const int &N)
+    {
+        std::vector<int> indices(dists.size());
+        for (int i = 0; i < dists.size(); i++)
+            indices[i] = i;
+
+        std::partial_sort(indices.begin(), indices.begin() + N, indices.end(),
+                          [&dists](int i, int j)
+                          { return dists[i] < dists[j]; });
+
+        return std::vector<int>(indices.begin(), indices.begin() + N);
+    }
+
+    void extractRows(const Eigen::Matrix<double, Eigen::Dynamic, 3> &matrix, Eigen::Matrix<double, Eigen::Dynamic, 3> &subMatrix, std::vector<int> &rows)
+    {
+        subMatrix.resize(rows.size(), Eigen::NoChange);
+        for (size_t i = 0; i < rows.size(); i++)
+        {
+            auto a = matrix.row(rows[i]);
+            subMatrix.row(i) = a;
+        }
+    }
+
+    Matrix4<double> ICPtrimmedIter(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2, MyKdTree<EigenPCL> &my_tree, double &avg_distance)
+    {
+
+        double overlap = 1.0;
+        int Noverlap = PCL2.rows() * overlap;
+        std::cout << "N overlapping points: " << Noverlap << std::endl;
+
+        auto querySet = PCL2;
+        EigenPCL PCL3(PCL2);
+
+
+        int rows = querySet.rows();
+        std::vector<double> distances(rows);
+        std::vector<int32_t> inds(rows);
+
+#pragma omp parallel for
+        for (long long int i = 0; i < rows; i++)
+        {
+            int query_index = i;
+            Eigen::Vector3d pt_query = querySet.row(query_index);
+            double cur_closest_distance;
+            int closestIndex = findClosestIndex(pt_query, my_tree, cur_closest_distance);
+            distances[i] = cur_closest_distance;
+            inds[i] = closestIndex;
+            PCL3.row(i) = PCL1.row(closestIndex);
+        }
+        std::vector<int> best_distances = findBestIndices(distances, Noverlap);
+
+        EigenPCL PCL2_sub;
+        EigenPCL PCL3_sub;
+
+        extractRows(PCL2, PCL2_sub, best_distances);
+        extractRows(PCL3, PCL3_sub, best_distances);
+
+        avg_distance = 0;
+        double cur_closest_distance;
+        for (size_t i = 0; i < best_distances.size(); i++)
+        {
+            cur_closest_distance = distances[best_distances[i]];
+            avg_distance = avg_distance * i / (i + 1) + cur_closest_distance / (i + 1);
+        }
+
+        std::cout << "Avg closest distance: " << avg_distance << std::endl;
+
+        Matrix4<double> T;
+        T = best_fit_transform(PCL2_sub, PCL3_sub);
+        return T;
+    }
+
+    Matrix4<double> ICPtrimmed(const EigenPCLMat<double> &PCL1, EigenPCLMat<double> &PCL2_in, int max_iter)
+    {
+
+        MyKdTree<EigenPCL> my_tree(EigenPCL::ColsAtCompileTime, std::cref(PCL1));
+        my_tree.index->buildIndex();
+        Matrix4<double> T_res = Matrix4<double>::Identity(4, 4);
+        Matrix4<double> T = Matrix4<double>::Identity(4, 4);
+        EigenPCLMat<double> PCL2(PCL2_in);
+
+        double avg_distance = std::numeric_limits<double>::max();
+        double decrease_th = 0.05;
+        size_t i;
+        for (i = 0; i < max_iter; i++)
+        {
+            double prev_dist = avg_distance;
+            T = ICPtrimmedIter(PCL1, PCL2, my_tree, avg_distance);
+            if (avg_distance > prev_dist)
+            {
+                std::cout << "Distance increased!" << std::endl;
+                return T;
+            }
+            T_res = T_res * T;
+            const int rows = int(PCL2.rows());
+            Eigen::Matrix<double, Eigen::Dynamic, -1> ones(rows, 1);
+            ones.setConstant(1);
+            Eigen::Matrix<double, Eigen::Dynamic, -1> PCL2_hom(rows, 4);
+            PCL2_hom << PCL2, ones;
+            PCL2_hom = PCL2_hom * (T);
+            PCL2 << PCL2_hom.leftCols<3>().eval();
+            if (prev_dist / avg_distance < 1 + decrease_th)
+            {
+                std::cout << "Converged!" << std::endl;
+                break;
+            }
+        }
+        if (i == max_iter)
+        {
+            std::cout << "Not Converged! Reached maximum iterations" << std::endl;
+        }
+
+        return T_res;
+    }
+
 }

@@ -35,6 +35,10 @@ namespace my_icp
     void applyTransformation(EigenPCLMat<double> &PCL, const Eigen::Matrix4d T);
 
     Matrix4<double> ICP(const EigenPCLMat<double> &PCL1, EigenPCLMat<double> &PCL2_in, int max_iter = 15);
+
+    Matrix4<double> ICPtrimmedIter(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2, MyKdTree<EigenPCL> &my_tree, double &avg_distance);
+    Matrix4<double> ICPtrimmed(const EigenPCLMat<double> &PCL1, EigenPCLMat<double> &PCL2_in, int max_iter = 15);
+
 }
 
 #endif
