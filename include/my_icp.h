@@ -30,11 +30,11 @@ namespace my_icp
     // template <typename Der>
     Matrix4<double> best_fit_transform(const EigenPCLMat<double> &A, const EigenPCLMat<double> &B);
 
-    Matrix4<double> ICPiter(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2, MyKdTree<EigenPCL> &my_tree);
+    Matrix4<double> ICPiter(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2, MyKdTree<EigenPCL> &my_tree, double& avg_distance);
 
     void applyTransformation(EigenPCLMat<double> &PCL, const Eigen::Matrix4d T);
 
-    Matrix4<double> ICP(const EigenPCLMat<double> &PCL1, EigenPCLMat<double> &PCL2_in);
+    Matrix4<double> ICP(const EigenPCLMat<double> &PCL1, EigenPCLMat<double> &PCL2_in, int max_iter = 15);
 }
 
 #endif

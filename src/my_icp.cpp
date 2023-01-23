@@ -13,6 +13,7 @@
 
 #include <omp.h>
 #include <my_icp.h>
+#include <limits> 
 
 namespace fs = boost::filesystem;
 
@@ -93,7 +94,7 @@ namespace my_icp
         return T;
     }
 
-    Matrix4<double> ICPiter(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2, MyKdTree<EigenPCL> &my_tree)
+    Matrix4<double> ICPiter(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2, MyKdTree<EigenPCL> &my_tree, double& avg_distance)
     {
         auto querySet = PCL2;
         EigenPCL PCL3(PCL2);
@@ -114,7 +115,7 @@ namespace my_icp
             PCL3.row(i) = PCL1.row(closestIndex);
         }
 
-        double avg_distance = 0;
+        avg_distance = 0;
         double cur_closest_distance;
         for (size_t i = 0; i < distances.size(); i++)
         {
@@ -137,20 +138,28 @@ namespace my_icp
         Eigen::Matrix<double, Eigen::Dynamic, -1> PCL_hom(rows, 4);
         PCL_hom << PCL, ones;
         PCL_hom = PCL_hom * (T);
-        std::cout << PCL_hom.size() << std::endl;
         PCL << PCL_hom.leftCols<3>().eval();
     }
 
-    Matrix4<double> ICP(const EigenPCLMat<double> &PCL1, EigenPCLMat<double> &PCL2_in)
+    Matrix4<double> ICP(const EigenPCLMat<double> &PCL1, EigenPCLMat<double> &PCL2_in, int max_iter)
     {
         MyKdTree<EigenPCL> my_tree(EigenPCL::ColsAtCompileTime, std::cref(PCL1));
         my_tree.index->buildIndex();
         Matrix4<double> T_res = Matrix4<double>::Identity(4, 4);
         Matrix4<double> T = Matrix4<double>::Identity(4, 4);
         EigenPCLMat<double> PCL2(PCL2_in);
-        for (size_t i = 0; i < 4; i++)
+
+        double avg_distance = std::numeric_limits<double>::max();
+        double decrease_th = 0.05;
+        size_t i;
+        for ( i = 0; i < max_iter; i++)
         {
-            T = ICPiter(PCL1, PCL2, my_tree);
+            double prev_dist = avg_distance;
+            T = ICPiter(PCL1, PCL2, my_tree, avg_distance);
+            if (avg_distance > prev_dist){
+                std::cout << "Distance increased!" << std::endl;
+                return T;
+            }
             T_res = T_res * T;
             const int rows = int(PCL2.rows());
             Eigen::Matrix<double, Eigen::Dynamic, -1> ones(rows, 1);
@@ -159,6 +168,13 @@ namespace my_icp
             PCL2_hom << PCL2, ones;
             PCL2_hom = PCL2_hom * (T);
             PCL2 << PCL2_hom.leftCols<3>().eval();
+            if (prev_dist/avg_distance < 1+decrease_th){
+                std::cout << "Converged!" << std::endl;
+                break;
+            }
+        }
+        if (i == max_iter){
+            std::cout << "Not Converged! Reached maximum iterations" << std::endl;
         }
 
         return T_res;

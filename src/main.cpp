@@ -22,16 +22,16 @@ using namespace nanoflann;
 // template <typename Der>
 void Disparity2PointCloud(
     Eigen::Matrix<double, Eigen::Dynamic, 3> &pcl, cv::Mat &disparities,
-    const int &dmin, const double &baseline = 160, const double &focal_length = 3740)
+    const int &dmin, const double &baseline = 160, const double &focal_length = 3740, int step = 10)
 {
   int rows = disparities.rows;
   int cols = disparities.cols;
   std::vector<std::vector<double>> points_vec;
 #pragma omp paraller for
-  for (int r = 0; r < rows; ++r)
+  for (int r = 0; r < rows; r+=step)
   {
     // #pragma omp parallel for
-    for (int c = 0; c < cols; ++c)
+    for (int c = 0; c < cols; c+=step)
     {
       if (disparities.at<uchar>(r, c) == 0)
         continue;
