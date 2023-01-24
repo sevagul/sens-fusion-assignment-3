@@ -87,9 +87,11 @@ int main(int argc, char **argv)
   EigenPCL PCL3(PCL2);
 
   Matrix4<double> T;
-  T = my_icp::ICP(PCL1, PCL2);
-
+  T = my_icp::ICPtrimmed(PCL1, PCL2, 0.95);
   std::cout << T << std::endl;
+  // T = my_icp::ICP(PCL1, PCL2);
+  // std::cout << T << std::endl;
+
   EigenPCL result(PCL2);
   my_icp::applyTransformation(result, T);
 
