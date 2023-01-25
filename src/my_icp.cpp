@@ -91,6 +91,8 @@ namespace my_icp
 
         (T.block<3, 3>(0, 0)) = R;
         (T.block<3, 1>(0, 3)) = t;
+
+        std::cout << "Best transform: " << std::endl << T << std::endl;
         return T;
     }
 
@@ -137,7 +139,7 @@ namespace my_icp
         ones.setConstant(1);
         Eigen::Matrix<double, Eigen::Dynamic, -1> PCL_hom(rows, 4);
         PCL_hom << PCL, ones;
-        PCL_hom = PCL_hom * (T);
+        PCL_hom = PCL_hom * (T.transpose());
         PCL << PCL_hom.leftCols<3>().eval();
     }
 
@@ -159,16 +161,12 @@ namespace my_icp
             if (avg_distance > prev_dist)
             {
                 std::cout << "Distance increased!" << std::endl;
-                return T;
+                return T_res;
             }
-            T_res = T_res * T;
-            const int rows = int(PCL2.rows());
-            Eigen::Matrix<double, Eigen::Dynamic, -1> ones(rows, 1);
-            ones.setConstant(1);
-            Eigen::Matrix<double, Eigen::Dynamic, -1> PCL2_hom(rows, 4);
-            PCL2_hom << PCL2, ones;
-            PCL2_hom = PCL2_hom * (T);
-            PCL2 << PCL2_hom.leftCols<3>().eval();
+            T_res = T * T_res ;
+            
+            applyTransformation(PCL2, T);
+
             if (prev_dist / avg_distance < 1 + decrease_th)
             {
                 std::cout << "Converged!" << std::endl;
@@ -179,6 +177,7 @@ namespace my_icp
         {
             std::cout << "Not Converged! Reached maximum iterations" << std::endl;
         }
+
 
         return T_res;
     }
@@ -274,7 +273,7 @@ namespace my_icp
                 std::cout << "Distance increased!" << std::endl;
                 return T;
             }
-            T_res = T_res * T;
+            T_res = T * T_res;
             const int rows = int(PCL2.rows());
             Eigen::Matrix<double, Eigen::Dynamic, -1> ones(rows, 1);
             ones.setConstant(1);

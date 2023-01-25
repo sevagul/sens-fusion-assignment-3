@@ -9,6 +9,7 @@
 #include <boost/filesystem.hpp>
 #include <Eigen/Dense>
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 
 #include <omp.h>
 #include "my_icp.h"
@@ -63,6 +64,30 @@ void Disparity2PointCloud(
   }
 }
 
+Eigen::Affine3d create_rotation_matrix(double ax, double ay, double az) {
+  Eigen::Affine3d rx =
+      Eigen::Affine3d(Eigen::AngleAxisd(ax, Eigen::Vector3d(1, 0, 0)));
+  Eigen::Affine3d ry =
+      Eigen::Affine3d(Eigen::AngleAxisd(ay, Eigen::Vector3d(0, 1, 0)));
+  Eigen::Affine3d rz =
+      Eigen::Affine3d(Eigen::AngleAxisd(az, Eigen::Vector3d(0, 0, 1)));
+  return rz * ry * rx;
+}
+
+void applyTransformation(const EigenPCLMat<double> &PCL, const Eigen::Matrix4d& T, EigenPCLMat<double> &out)
+    {
+        const int rows = int(PCL.rows());
+        Eigen::Matrix<double, Eigen::Dynamic, -1> ones = Eigen::MatrixXd::Constant(rows, 1, 1.0);
+        // ones.setConstant(1);
+        Eigen::Matrix<double, Eigen::Dynamic, -1> PCL_hom(rows, 4);
+        PCL_hom << PCL, ones;
+        std::cout << PCL_hom.topRows(5) << std::endl;
+        std::cout << T << std::endl;
+        PCL_hom = PCL_hom * (T.transpose() );
+        out << PCL_hom.leftCols<3>();
+    }
+
+
 int main(int argc, char **argv)
 {
   bool visualize = true;
@@ -81,21 +106,53 @@ int main(int argc, char **argv)
   EigenPCL PCL1;
   EigenPCL PCL2;
 
+  // Matrix4<double> T_init;
+  // Eigen::Affine3f m;     m  = Eigen::AngleAxisd(0.5, Eigen::Vector3d(1.0, 0.0, 0.0));
+  Eigen::Affine3d r = create_rotation_matrix(0.00, 0, 0);
+  Eigen::Affine3d t(Eigen::Translation3d(Eigen::Vector3d(3000,0,300)));
+
+  Eigen::Matrix4d t_init = (t * r).matrix(); // Option 1
+  std::cout << t_init << std::endl;
+
+  // T_init.block<0, 0>(3, 3) = m.matrix();
+
   Disparity2PointCloud(PCL1, D1, 200, 160, 3740);
   Disparity2PointCloud(PCL2, D2, 200, 160, 3740);
 
-  EigenPCL PCL3(PCL2);
+  Eigen::Vector3d S_A = PCL1.colwise().mean();
+  // std::cout << S_A << std::endl;
+
+  PCL1 = PCL1.rowwise() - S_A.transpose();
+  
+
+  EigenPCL PCL3(PCL1);
+  applyTransformation( PCL1, t_init, PCL3);
+  // std::cout << PCL3.topRows(5) << std::endl;
+
+  // auto a = PCL3.topRows(PCL3.rows()*1.0).eval();
+  // auto b = PCL1.bottomRows(PCL1.rows()*1.0).eval();
+  
+  // PCL1 = PCL1.bottomRows(PCL1.rows()*0.9);
+
 
   Matrix4<double> T;
-  T = my_icp::ICPtrimmed(PCL1, PCL2, 0.95);
+  T = my_icp::ICP(PCL1, PCL3, 100);
+  // T = my_icp::best_fit_transform(PCL1, PCL3);
+  std::cout << "Resulting: " << std::endl;
   std::cout << T << std::endl;
-  // T = my_icp::ICP(PCL1, PCL2);
+  //  MyKdTree<EigenPCL> my_tree(EigenPCL::ColsAtCompileTime, std::cref(PCL1));
+  // my_tree.index->buildIndex();
+  // double avg_dist = 0;
+  // T = my_icp::ICPiter(PCL1, PCL3, my_tree, avg_dist);
   // std::cout << T << std::endl;
 
-  EigenPCL result(PCL2);
+  EigenPCL result(PCL3);
   my_icp::applyTransformation(result, T);
 
   my_vis::vis_point_clouds(PCL1, result);
+
+  
+  // my_vis::vis_point_clouds(a, result);
 
   return 0;
 }
