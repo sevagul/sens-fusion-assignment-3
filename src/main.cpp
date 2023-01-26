@@ -14,6 +14,8 @@
 #include <omp.h>
 #include "my_icp.h"
 
+#include <random>
+
 namespace fs = boost::filesystem;
 
 using namespace Eigen;
@@ -29,10 +31,10 @@ void Disparity2PointCloud(
   int cols = disparities.cols;
   std::vector<std::vector<double>> points_vec;
 #pragma omp paraller for
-  for (int r = 0; r < rows; r+=step)
+  for (int r = 0; r < rows; r += step)
   {
     // #pragma omp parallel for
-    for (int c = 0; c < cols; c+=step)
+    for (int c = 0; c < cols; c += step)
     {
       if (disparities.at<uchar>(r, c) == 0)
         continue;
@@ -64,7 +66,8 @@ void Disparity2PointCloud(
   }
 }
 
-Eigen::Affine3d create_rotation_matrix(double ax, double ay, double az) {
+Eigen::Affine3d create_rotation_matrix(double ax, double ay, double az)
+{
   Eigen::Affine3d rx =
       Eigen::Affine3d(Eigen::AngleAxisd(ax, Eigen::Vector3d(1, 0, 0)));
   Eigen::Affine3d ry =
@@ -74,23 +77,48 @@ Eigen::Affine3d create_rotation_matrix(double ax, double ay, double az) {
   return rz * ry * rx;
 }
 
-void applyTransformation(const EigenPCLMat<double> &PCL, const Eigen::Matrix4d& T, EigenPCLMat<double> &out)
-    {
-        const int rows = int(PCL.rows());
-        Eigen::Matrix<double, Eigen::Dynamic, -1> ones = Eigen::MatrixXd::Constant(rows, 1, 1.0);
-        // ones.setConstant(1);
-        Eigen::Matrix<double, Eigen::Dynamic, -1> PCL_hom(rows, 4);
-        PCL_hom << PCL, ones;
-        std::cout << PCL_hom.topRows(5) << std::endl;
-        std::cout << T << std::endl;
-        PCL_hom = PCL_hom * (T.transpose() );
-        out << PCL_hom.leftCols<3>();
-    }
+void addGausiianNoise(EigenPCLMat<double> &PCL, double stddev, int seed)
+{
+  std::vector<double> data = {1., 2., 3., 4., 5., 6.};
 
+  // Define random generator with Gaussian distribution
+  const double mean = 0.0;
+  std::default_random_engine generator;
+  generator.seed(seed);
+  std::normal_distribution<double> dist(mean, stddev);
+
+  // Add Gaussian noise
+  for (size_t i = 0; i < PCL.rows(); i++)
+  {
+    for (size_t j = 0; j < PCL.cols(); j++)
+    {
+      PCL(i, j) += dist(generator);
+    }
+  }
+
+  return;
+}
+
+void normalizePCL(EigenPCL &PCL)
+{
+  Eigen::Vector3d S_A = PCL.colwise().mean();
+  PCL = PCL.rowwise() - S_A.transpose();
+}
+
+void generatePair(EigenPCL &Original, EigenPCL &Output, Eigen::Matrix4d transformation, double noiseStd, double overlap)
+{
+}
 
 int main(int argc, char **argv)
 {
   bool visualize = true;
+  double noiseStd = 5;
+  double overlapInit = 0.9;
+  double overlapICP = overlapInit;
+  double dx = 40;
+  double roll = 0.2;
+  int maxIter = 100; 
+
   cv::Mat D1;
   cv::Mat D2;
   std::string datasetName = "Art";
@@ -98,59 +126,54 @@ int main(int argc, char **argv)
   data_path = data_path / datasetName;
 
   fs::path d1_path = data_path / "disp1.png";
-  fs::path d2_path = data_path / "disp5.png";
+  // fs::path d2_path = data_path / "disp5.png";
 
   D1 = cv::imread(d1_path.string(), 0);
-  D2 = cv::imread(d2_path.string(), 0);
+  // D2 = cv::imread(d2_path.string(), 0);
 
   EigenPCL PCL1;
   EigenPCL PCL2;
 
-  // Matrix4<double> T_init;
-  // Eigen::Affine3f m;     m  = Eigen::AngleAxisd(0.5, Eigen::Vector3d(1.0, 0.0, 0.0));
-  Eigen::Affine3d r = create_rotation_matrix(0.2, 0, 0);
-  Eigen::Affine3d t(Eigen::Translation3d(Eigen::Vector3d(0,0,0)));
+  Disparity2PointCloud(PCL1, D1, 200, 160, 3740);
+  // Disparity2PointCloud(PCL2, D2, 200, 160, 3740);
 
+  normalizePCL(PCL1);
+  EigenPCL PCL3(PCL1);
+
+
+  addGausiianNoise(PCL1, noiseStd, 1);
+  // addGausiianNoise(PCL2, noiseStd);
+  addGausiianNoise(PCL3, noiseStd, 2);
+
+  // init PCL
+  Eigen::Affine3d r = create_rotation_matrix(roll, 0, 0);
+  Eigen::Affine3d t(Eigen::Translation3d(Eigen::Vector3d(dx, 0, 0)));
   Eigen::Matrix4d t_init = (t * r).matrix(); // Option 1
+  
+  std::cout << "True Transformation: " << std::endl;
   std::cout << t_init << std::endl;
 
-  // T_init.block<0, 0>(3, 3) = m.matrix();
-
-  Disparity2PointCloud(PCL1, D1, 200, 160, 3740);
-  Disparity2PointCloud(PCL2, D2, 200, 160, 3740);
-
-  Eigen::Vector3d S_A = PCL1.colwise().mean();
-  // std::cout << S_A << std::endl;
-
-  PCL1 = PCL1.rowwise() - S_A.transpose();
   
 
-  EigenPCL PCL3(PCL1);
-  applyTransformation( PCL1, t_init, PCL3);
-  // std::cout << PCL3.topRows(5) << std::endl;
+  PCL3 = PCL3.topRows(PCL3.rows() * overlapInit).eval();
+  PCL1 = PCL1.bottomRows(PCL1.rows() * overlapInit).eval();
 
-  auto a = PCL3.topRows(PCL3.rows()*0.7).eval();
-  auto b = PCL1.bottomRows(PCL1.rows()*0.7).eval();
-  
-
+  my_icp::applyTransformation(PCL3, t_init);
 
   Matrix4<double> T;
-  T = my_icp::ICPtrimmed(a, b, 0.7, 100);
-  // T = my_icp::best_fit_transform(PCL1, PCL3);
-  std::cout << "Resulting: " << std::endl;
-  std::cout << T << std::endl;
-  //  MyKdTree<EigenPCL> my_tree(EigenPCL::ColsAtCompileTime, std::cref(PCL1));
-  // my_tree.index->buildIndex();
-  // double avg_dist = 0;
-  // T = my_icp::ICPiter(PCL1, PCL3, my_tree, avg_dist);
-  // std::cout << T << std::endl;
+  T = my_icp::ICPtrimmed(PCL1, PCL3, overlapICP, maxIter);
 
-  EigenPCL result(b);
+  std::cout << "estimated Transformation: " << std::endl;
+  std::cout << T.inverse() << std::endl;
+
+  EigenPCL result(PCL3);
   my_icp::applyTransformation(result, T);
 
-  my_vis::vis_point_clouds(a, result);
+  if (visualize)
+  {
+    my_vis::vis_point_clouds(PCL1, result);
+  }
 
-  
   // my_vis::vis_point_clouds(a, result);
 
   return 0;

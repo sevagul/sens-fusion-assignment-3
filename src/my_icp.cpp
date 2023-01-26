@@ -92,7 +92,6 @@ namespace my_icp
         (T.block<3, 3>(0, 0)) = R;
         (T.block<3, 1>(0, 3)) = t;
 
-        std::cout << "Best transform: " << std::endl << T << std::endl;
         return T;
     }
 
@@ -125,22 +124,24 @@ namespace my_icp
             avg_distance = avg_distance * i / (i + 1) + cur_closest_distance / (i + 1);
         }
 
-        std::cout << "Avg closest distance: " << avg_distance << std::endl;
-
         Matrix4<double> T;
         T = best_fit_transform(PCL2, PCL3);
         return T;
     }
 
-    void applyTransformation(EigenPCLMat<double> &PCL, const Eigen::Matrix4d T)
+    void applyTransformation(const EigenPCLMat<double> &PCL, const Eigen::Matrix4d &T, EigenPCLMat<double> &out)
     {
         const int rows = int(PCL.rows());
-        Eigen::Matrix<double, Eigen::Dynamic, -1> ones(rows, 1);
-        ones.setConstant(1);
+        Eigen::Matrix<double, Eigen::Dynamic, -1> ones = Eigen::MatrixXd::Constant(rows, 1, 1.0);
         Eigen::Matrix<double, Eigen::Dynamic, -1> PCL_hom(rows, 4);
         PCL_hom << PCL, ones;
         PCL_hom = PCL_hom * (T.transpose());
-        PCL << PCL_hom.leftCols<3>().eval();
+        out << PCL_hom.leftCols<3>();
+    }
+
+    void applyTransformation(EigenPCLMat<double> &PCL, const Eigen::Matrix4d T)
+    {
+        applyTransformation(PCL, T, PCL);
     }
 
     Matrix4<double> ICP(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2_in, int max_iter)
@@ -160,24 +161,23 @@ namespace my_icp
             T = ICPiter(PCL1, PCL2, my_tree, avg_distance);
             if (avg_distance > prev_dist)
             {
-                std::cout << "Distance increased!" << std::endl;
+                std::cout << "ICP: Avg. Distance increased! Stopped" << std::endl;
                 return T_res;
             }
-            T_res = T * T_res ;
-            
+            T_res = T * T_res;
+
             applyTransformation(PCL2, T);
 
             if (prev_dist / avg_distance < 1 + decrease_th)
             {
-                std::cout << "Converged!" << std::endl;
+                std::cout << "ICP Converged! Stopping " << std::endl;
                 break;
             }
         }
         if (i == max_iter)
         {
-            std::cout << "Not Converged! Reached maximum iterations" << std::endl;
+            std::cout << " ICP did not Converge! Reached maximum iterations" << std::endl;
         }
-
 
         return T_res;
     }
@@ -185,7 +185,8 @@ namespace my_icp
     std::vector<int> findMinValInds(std::vector<double> &dists, const int &N)
     {
         std::vector<int> indices(dists.size());
-        for (int i = 0; i < dists.size(); i++){
+        for (int i = 0; i < dists.size(); i++)
+        {
             indices[i] = i;
         }
 
@@ -207,12 +208,11 @@ namespace my_icp
 
     Matrix4<double> ICPtrimmedIter(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2, MyKdTree<EigenPCL> &my_tree, double &avg_distance, double overlap)
     {
+        bool verbose = false;
 
         int Noverlap = PCL2.rows() * overlap;
-        std::cout << "N overlapping points: " << Noverlap << std::endl;
 
         EigenPCL PCL3(PCL2);
-
 
         int rows = PCL2.rows();
         std::vector<double> distances(rows);
@@ -243,8 +243,10 @@ namespace my_icp
             cur_closest_distance = distances[minValInds[i]];
             avg_distance = avg_distance * i / (i + 1) + cur_closest_distance / (i + 1);
         }
-
-        std::cout << "Avg closest distance: " << avg_distance << std::endl;
+        if (verbose)
+        {
+            std::cout << "Avg closest distance: " << avg_distance << std::endl;
+        }
 
         Matrix4<double> T;
         T = best_fit_transform(PCL2_sub, PCL3_sub);
@@ -253,6 +255,12 @@ namespace my_icp
 
     Matrix4<double> ICPtrimmed(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2_in, double overlap, int max_iter)
     {
+        bool verbose = true;
+        if (verbose)
+        {
+            int Noverlap = PCL2_in.rows() * overlap;
+            std::cout << "N overlapping points: " << Noverlap << std::endl;
+        }
 
         MyKdTree<EigenPCL> my_tree(EigenPCL::ColsAtCompileTime, std::cref(PCL1));
         my_tree.index->buildIndex();
@@ -267,26 +275,27 @@ namespace my_icp
         {
             double prev_dist = avg_distance;
             T = ICPtrimmedIter(PCL1, PCL2, my_tree, avg_distance, overlap);
-            // T = ICPtrimmedIter(PCL1, PCL2, my_tree, avg_distance);
             if (avg_distance > prev_dist)
             {
-                std::cout << "Distance increased!" << std::endl;
+                std::cout << "Distance increased after " << i << " interations!" << std::endl;
                 return T;
             }
-            T_res = T * T_res ;
-            
+            T_res = T * T_res;
+
             applyTransformation(PCL2, T);
-            
+
             if (prev_dist / avg_distance < 1 + decrease_th)
             {
-                std::cout << "Converged!" << std::endl;
+                std::cout << "Converged in " << i << " iterations!" << std::endl;
                 break;
             }
         }
         if (i == max_iter)
         {
-            std::cout << "Not Converged! Reached maximum iterations" << std::endl;
+            std::cout << "Not Converged! Reached maximum iterations: " << i << std::endl;
         }
+
+        std::cout << "Avg. Distance: " << avg_distance << std::endl;
 
         return T_res;
     }
