@@ -253,7 +253,7 @@ namespace my_icp
         return T;
     }
 
-    Matrix4<double> ICPtrimmed(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2_in, double overlap, int max_iter)
+    Matrix4<double> ICPtrimmed(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2_in, double overlap, double& avgDistance, int max_iter)
     {
         bool verbose = true;
         if (verbose)
@@ -296,6 +296,7 @@ namespace my_icp
         }
 
         std::cout << "Avg. Distance: " << avg_distance << std::endl;
+        avgDistance = avg_distance;
 
         return T_res;
     }

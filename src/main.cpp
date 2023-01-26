@@ -16,6 +16,11 @@
 
 #include <random>
 
+
+#include <boost/program_options.hpp>
+
+#include <fstream>
+
 namespace fs = boost::filesystem;
 
 using namespace Eigen;
@@ -105,19 +110,87 @@ void normalizePCL(EigenPCL &PCL)
   PCL = PCL.rowwise() - S_A.transpose();
 }
 
-void generatePair(EigenPCL &Original, EigenPCL &Output, Eigen::Matrix4d transformation, double noiseStd, double overlap)
-{
+float rotDiff(Matrix4<double> T1, Matrix4<double> T2){
+  Quaterniond q1(T1.block<3, 3>(0, 0));
+  Quaterniond q2(T2.block<3, 3>(0, 0));
+  double diff = (q1.coeffs()  - q2.coeffs()).norm();
+  return diff;
 }
+double translationDiff(Matrix4<double> T1, Matrix4<double> T2){
+  Matrix4<double> Tdiff = T1*T2.inverse();
+  // Quaterniond q1(T1.block<3, 3>(0, 0));
+  // Quaterniond q2(T2.block<3, 3>(0, 0));
+  // std::cout << "Block:" << std::endl;
+  // std::cout << T1.block<3, 1>(0, 3) << std::endl;
+  double diff = (Tdiff.block<3, 1>(0, 3)).norm();
+  return diff;
+}
+
+namespace po = boost::program_options;
 
 int main(int argc, char **argv)
 {
   bool visualize = true;
+  bool visualizeSetup = false;
   double noiseStd = 5;
   double overlapInit = 0.9;
   double overlapICP = overlapInit;
-  double dx = 40;
+  int dx = 40;
   double roll = 0.2;
-  int maxIter = 100; 
+  int maxIter = 100;
+  std::string outputFileStr = "output.txt";
+
+
+  po::options_description command_line_options("cli options");
+  command_line_options.add_options()
+  ("help,h", "Produce help message")
+  ("shift-x,x", po::value<int>(& dx)->default_value(0), "shift in x to the original PCL")
+  ("visualize-setup,V", "Visualize generated pointclouds pointcloud")
+  ("visualize,v", "Visualize aligned pointcloud")
+  ("noise-std,n", po::value<double>(& noiseStd)->default_value(noiseStd), "Standard deviation of the applied noise")
+  ("roll,r", po::value<double>(& roll)->default_value(0), "roll applied to the original PCL")
+  ("max-iter,m", po::value<int>(& maxIter)->default_value(100), "maximum amount of iterations")
+  ("ovarlap-init,O", po::value<double>(& overlapInit)->default_value(1), "% of overlap for the generated PCL with the original")
+  ("ovarlap-icp,o", po::value<double>(& overlapICP)->default_value(1), "% of overlap for the trimmed ICP algo")
+  ("output,t", po::value<std::string>(& outputFileStr)->default_value("output.txt"), "name of the output file in output folder");
+
+  po::variables_map vm;
+    po::options_description cmd_opts;
+    cmd_opts.add(command_line_options);
+    po::store(po::command_line_parser(argc, argv).
+          options(cmd_opts).run(), vm);
+    po::notify(vm);
+  
+  if (vm.count("help")) {
+    std::cout << "Usage: TrICP [<options>]\n";
+    po::options_description help_opts;
+    help_opts.add(command_line_options);
+    std::cout << help_opts << "\n";
+    return 1;
+  }
+  if (vm.count("visualize-setup")) {
+    visualizeSetup = true;
+  } else {
+    visualizeSetup = false;
+  }
+  if (vm.count("visualize")) {
+    visualize = true;
+  } else {
+    visualize = false;
+  }
+  std::cout << "Shift x: " << dx << std::endl;
+  std::cout << "visualize: " << visualize << std::endl;
+  std::cout << "noiseStd: " << noiseStd << std::endl;
+  std::cout << "overlapInit: " << overlapInit << std::endl;
+  std::cout << "overlapICP: " << overlapICP << std::endl;
+  std::cout << "dx: " << dx << std::endl;
+  std::cout << "roll: " << roll << std::endl;
+  std::cout << "maxIter: " << maxIter << std::endl;
+
+  fs::path outFile = ("output");
+  outFile /= outputFileStr;
+  
+  std::cout << "Output File: " << outFile << std::endl;
 
   cv::Mat D1;
   cv::Mat D2;
@@ -142,8 +215,8 @@ int main(int argc, char **argv)
 
 
   addGausiianNoise(PCL1, noiseStd, 1);
-  // addGausiianNoise(PCL2, noiseStd);
-  addGausiianNoise(PCL3, noiseStd, 2);
+  // addGausiianNoise(PCL2, noiseStd, 2);
+  addGausiianNoise(PCL3, noiseStd, 3);
 
   // init PCL
   Eigen::Affine3d r = create_rotation_matrix(roll, 0, 0);
@@ -153,28 +226,43 @@ int main(int argc, char **argv)
   std::cout << "True Transformation: " << std::endl;
   std::cout << t_init << std::endl;
 
-  
-
   PCL3 = PCL3.topRows(PCL3.rows() * overlapInit).eval();
   PCL1 = PCL1.bottomRows(PCL1.rows() * overlapInit).eval();
 
   my_icp::applyTransformation(PCL3, t_init);
 
-  Matrix4<double> T;
-  T = my_icp::ICPtrimmed(PCL1, PCL3, overlapICP, maxIter);
+  if (visualizeSetup){
+    my_vis::vis_point_clouds(PCL1, PCL3);
+  }
 
-  std::cout << "estimated Transformation: " << std::endl;
+  double avgDistance = -1;
+
+  Matrix4<double> T;
+  T = my_icp::ICPtrimmed(PCL1, PCL3, overlapICP, avgDistance, maxIter);
+
+  std::cout << "Estimated Transformation: " << std::endl;
   std::cout << T.inverse() << std::endl;
+
+  double rotErr = rotDiff(T.inverse(), t_init);
+  double trErr = translationDiff(T.inverse(), t_init);
+
+  std::cout << "Rotational Error: " << rotErr << std::endl;
+  std::cout << "Translational Error: " << trErr << std::endl;
 
   EigenPCL result(PCL3);
   my_icp::applyTransformation(result, T);
+
+  ofstream myfile;
+  myfile.open(outFile.string());
+  myfile << "GeneratingParams: " << noiseStd << ", " << dx << ", " << roll << ", " << overlapInit << std::endl;
+  myfile << "ICP_params: " << overlapICP << ", " << maxIter << std::endl;
+  myfile << "Metrics: " << rotErr << ", " << trErr << ", " << avgDistance << std::endl;
+  myfile.close();
 
   if (visualize)
   {
     my_vis::vis_point_clouds(PCL1, result);
   }
-
-  // my_vis::vis_point_clouds(a, result);
 
   return 0;
 }

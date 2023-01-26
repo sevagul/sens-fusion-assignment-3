@@ -37,7 +37,7 @@ namespace my_icp
     Matrix4<double> ICP(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2_in, int max_iter = 15);
 
     Matrix4<double> ICPtrimmedIter(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2, MyKdTree<EigenPCL> &my_tree, double &avg_distance, double overlap);
-    Matrix4<double> ICPtrimmed(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2_in, double overlap, int max_iter = 15);
+    Matrix4<double> ICPtrimmed(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2_in, double overlap, double& acgDistance, int max_iter = 15);
 
 }
 
