@@ -108,8 +108,8 @@ int main(int argc, char **argv)
 
   // Matrix4<double> T_init;
   // Eigen::Affine3f m;     m  = Eigen::AngleAxisd(0.5, Eigen::Vector3d(1.0, 0.0, 0.0));
-  Eigen::Affine3d r = create_rotation_matrix(0.00, 0, 0);
-  Eigen::Affine3d t(Eigen::Translation3d(Eigen::Vector3d(3000,0,300)));
+  Eigen::Affine3d r = create_rotation_matrix(0.2, 0, 0);
+  Eigen::Affine3d t(Eigen::Translation3d(Eigen::Vector3d(0,0,0)));
 
   Eigen::Matrix4d t_init = (t * r).matrix(); // Option 1
   std::cout << t_init << std::endl;
@@ -129,14 +129,13 @@ int main(int argc, char **argv)
   applyTransformation( PCL1, t_init, PCL3);
   // std::cout << PCL3.topRows(5) << std::endl;
 
-  // auto a = PCL3.topRows(PCL3.rows()*1.0).eval();
-  // auto b = PCL1.bottomRows(PCL1.rows()*1.0).eval();
+  auto a = PCL3.topRows(PCL3.rows()*0.7).eval();
+  auto b = PCL1.bottomRows(PCL1.rows()*0.7).eval();
   
-  // PCL1 = PCL1.bottomRows(PCL1.rows()*0.9);
 
 
   Matrix4<double> T;
-  T = my_icp::ICP(PCL1, PCL3, 100);
+  T = my_icp::ICPtrimmed(a, b, 0.7, 100);
   // T = my_icp::best_fit_transform(PCL1, PCL3);
   std::cout << "Resulting: " << std::endl;
   std::cout << T << std::endl;
@@ -146,10 +145,10 @@ int main(int argc, char **argv)
   // T = my_icp::ICPiter(PCL1, PCL3, my_tree, avg_dist);
   // std::cout << T << std::endl;
 
-  EigenPCL result(PCL3);
+  EigenPCL result(b);
   my_icp::applyTransformation(result, T);
 
-  my_vis::vis_point_clouds(PCL1, result);
+  my_vis::vis_point_clouds(a, result);
 
   
   // my_vis::vis_point_clouds(a, result);

@@ -273,14 +273,10 @@ namespace my_icp
                 std::cout << "Distance increased!" << std::endl;
                 return T;
             }
-            T_res = T * T_res;
-            const int rows = int(PCL2.rows());
-            Eigen::Matrix<double, Eigen::Dynamic, -1> ones(rows, 1);
-            ones.setConstant(1);
-            Eigen::Matrix<double, Eigen::Dynamic, -1> PCL2_hom(rows, 4);
-            PCL2_hom << PCL2, ones;
-            PCL2_hom = PCL2_hom * (T);
-            PCL2 << PCL2_hom.leftCols<3>().eval();
+            T_res = T * T_res ;
+            
+            applyTransformation(PCL2, T);
+            
             if (prev_dist / avg_distance < 1 + decrease_th)
             {
                 std::cout << "Converged!" << std::endl;
