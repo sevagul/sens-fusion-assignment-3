@@ -1,6 +1,6 @@
 # Assignment 3 for Sensor Fusion subject in ELTE, Budapest by Vsevolod Hulchuk
 Initial allignment: <br/>
-![init](http://server.seva-hul.com/media/IFRoS/SensFusion/naive.jpg)<br/>
+![init](http://server.seva-hul.com/media/IFRoS/SensFusion/init.jpg)<br/>
 ICP:<br/>
 ![icp](http://server.seva-hul.com/media/IFRoS/SensFusion/naive.jpg)<br/>
 TrICP:<br/>
