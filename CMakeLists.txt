@@ -14,12 +14,12 @@ find_package (OpenCV REQUIRED )
 FIND_PACKAGE(Boost COMPONENTS program_options filesystem REQUIRED)
 INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIRS})
 
-add_executable(HelloWorld src/main.cpp src/my_icp.cpp)
-target_include_directories(HelloWorld PRIVATE ${EIGEN3_INCLUDE_DIR})
-target_link_libraries(HelloWorld  ${OpenCV_LIBS} ${Boost_LIBRARIES} ${PCL_LIBRARIES}) #nanoflann::nanoflann
+add_executable(TrICP src/main.cpp src/my_icp.cpp)
+target_include_directories(TrICP PRIVATE ${EIGEN3_INCLUDE_DIR})
+target_link_libraries(TrICP  ${OpenCV_LIBS} ${Boost_LIBRARIES} ${PCL_LIBRARIES}) #nanoflann::nanoflann
 
 if(OpenMP_CXX_FOUND)
-    target_link_libraries(HelloWorld OpenMP::OpenMP_CXX)
+    target_link_libraries(TrICP OpenMP::OpenMP_CXX)
 endif()
 # READ MORE:
 #   https://github.com/jlblancoc/nanoflann#11-obtaining-the-code

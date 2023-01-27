@@ -253,8 +253,10 @@ namespace my_icp
         return T;
     }
 
-    Matrix4<double> ICPtrimmed(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2_in, double overlap, double& avgDistance, int max_iter)
+    Matrix4<double> ICPtrimmed(const EigenPCLMat<double> &PCL1, const EigenPCLMat<double> &PCL2_in, double overlap, double& avgDistance, int& nIter, int max_iter)
     {
+
+        double minChange = 0.1;
         bool verbose = true;
         if (verbose)
         {
@@ -273,6 +275,7 @@ namespace my_icp
         size_t i;
         for (i = 0; i < max_iter; i++)
         {
+            nIter = i;
             double prev_dist = avg_distance;
             T = ICPtrimmedIter(PCL1, PCL2, my_tree, avg_distance, overlap);
             if (avg_distance > prev_dist)
@@ -284,7 +287,7 @@ namespace my_icp
 
             applyTransformation(PCL2, T);
 
-            if (prev_dist / avg_distance < 1 + decrease_th)
+            if ((prev_dist / avg_distance < 1 + decrease_th) || (prev_dist - avg_distance < minChange))
             {
                 std::cout << "Converged in " << i << " iterations!" << std::endl;
                 break;
